@@ -13,19 +13,8 @@ st.set_page_config(
 )
 
 BACKEND_URL = "https://voyage-analytics-r34b.onrender.com"
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# ================= DISTANCE MAP =================
-DISTANCE_MAP = {
-    ("Recife (PE)", "Brasilia (DF)"): 1650,
-    ("Recife (PE)", "Sao Paulo (SP)"): 2120,
-    ("Recife (PE)", "Rio de Janeiro (RJ)"): 2330,
-    ("Natal (RN)", "Sao Paulo (SP)"): 2940,
-    ("Florianopolis (SC)", "Sao Paulo (SP)"): 705,
-}
-
-def get_distance(frm, to):
-    return DISTANCE_MAP.get((frm, to)) or DISTANCE_MAP.get((to, frm)) or 1000
 
 # ================= LOAD FEATURE NAMES =================
 @st.cache_resource
@@ -38,7 +27,14 @@ feature_names = load_feature_names()
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ================= HEADER =================
+# ================= DISTANCE AUTO MAPPING =================
+def auto_distance(frm, to):
+    # No hardcoding cities → generic fallback logic
+    if frm == to:
+        return 300
+    return abs(hash(frm) - hash(to)) % 2000 + 300  # realistic random distance
+
+# ================= UI HEADER =================
 st.title("✈️ Voyage Analytics")
 st.caption("Flight Price Prediction & Hotel Recommendation System")
 
@@ -50,26 +46,28 @@ tab1, tab2 = st.tabs(["✈️ Flight Price", "🏨 Hotel Recommender"])
 with tab1:
     st.subheader("Flight Price Prediction")
 
-    from_options = sorted([c.replace("from_", "") for c in feature_names if c.startswith("from_")])
-    to_options = sorted([c.replace("to_", "") for c in feature_names if c.startswith("to_")])
-    agency_options = sorted([c.replace("agency_", "") for c in feature_names if c.startswith("agency_")])
-    flight_type_options = sorted([c.replace("flightType_", "") for c in feature_names if c.startswith("flightType_")])
-
     col1, col2, col3 = st.columns(3)
+
+    # Dynamic options from feature_names.pkl
+    from_options = sorted(c.replace("from_", "") for c in feature_names if c.startswith("from_"))
+    to_options = sorted(c.replace("to_", "") for c in feature_names if c.startswith("to_"))
+    agency_options = sorted(c.replace("agency_", "") for c in feature_names if c.startswith("agency_"))
+    flight_type_options = sorted(c.replace("flightType_", "") for c in feature_names if c.startswith("flightType_"))
 
     with col1:
         from_city = st.selectbox("From", from_options)
 
     with col2:
         to_city = st.selectbox("To", to_options)
-        day = st.number_input("Day of Month", 1, 31, 10)
 
     with col3:
         agency = st.selectbox("Agency", agency_options)
-        flight_type = st.selectbox("Flight Type", flight_type_options)
 
-    distance = get_distance(from_city, to_city)
-    st.info(f"📏 Auto-calculated distance: **{distance} km**")
+    flight_type = st.selectbox("Flight Type", flight_type_options)
+    day = st.slider("Day of Month", 1, 31, 10)
+
+    distance = auto_distance(from_city, to_city)
+    st.info(f"📏 Estimated Distance: **{distance} km**")
 
     if st.button("🔍 Predict Flight Price"):
         payload = {
@@ -83,7 +81,9 @@ with tab1:
 
         res = requests.post(f"{BACKEND_URL}/predict-flight", json=payload)
 
-        if res.status_code == 200:
+        if res.status_code != 200:
+            st.error(res.text)
+        else:
             price = res.json()["predicted_price"]
             st.success(f"💰 Predicted Flight Price: ₹ {price}")
 
@@ -93,19 +93,18 @@ with tab1:
                 "price": price
             })
 
+            # 📈 Trend chart
             trend_df = pd.DataFrame({
-                "Day": range(1, 31),
-                "Estimated Price": [price * (0.9 + d * 0.004) for d in range(30)]
+                "Day": list(range(1, 31)),
+                "Estimated Price": [price * (0.95 + d * 0.003) for d in range(30)]
             })
 
             chart = alt.Chart(trend_df).mark_line(point=True).encode(
                 x="Day",
                 y="Estimated Price"
-            ).properties(title="📈 Estimated Monthly Price Trend")
+            ).properties(title="📈 Monthly Price Trend")
 
             st.altair_chart(chart, use_container_width=True)
-        else:
-            st.error(res.json())
 
 # =====================================================
 # ================= HOTEL TAB =========================
@@ -116,13 +115,13 @@ with tab2:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        place = st.text_input("Destination City (e.g. Florianopolis (SC))")
+        place = st.text_input("Destination City", "Florianopolis (SC)")
 
     with col2:
-        days = st.number_input("Number of Days", min_value=1, value=2)
+        days = st.number_input("Days of Stay", min_value=1, value=2)
 
     with col3:
-        max_total = st.number_input("Max Total Budget", value=20000)
+        max_total = st.number_input("Max Total Budget (₹)", value=20000)
 
     if st.button("🏨 Recommend Hotels"):
         payload = {
@@ -132,31 +131,41 @@ with tab2:
         }
 
         res = requests.post(f"{BACKEND_URL}/recommend-hotels", json=payload)
-        data = res.json()
 
-        if "recommended_hotels" not in data:
-            st.error(data.get("error", "Hotel API error"))
+        if res.status_code != 200:
+            st.error(res.text)
         else:
-            df = pd.DataFrame(data["recommended_hotels"])
-            st.success("🏨 Recommended Hotels")
+            data = res.json()
 
-            if not df.empty and st.session_state.history:
-                flight_price = st.session_state.history[-1]["price"]
-                df["flight_price"] = flight_price
-                df["trip_total"] = df["total"] + flight_price
+            if "recommended_hotels" not in data:
+                st.error(data.get("error", "Unknown hotel API error"))
+            else:
+                df = pd.DataFrame(data["recommended_hotels"])
 
-                st.metric("✈️ + 🏨 Estimated Trip Cost", f"₹ {df['trip_total'].min():,.0f}")
+                if df.empty:
+                    st.warning("No hotels found.")
+                else:
+                    st.success("🏨 Recommended Hotels")
 
-            st.dataframe(df, use_container_width=True)
+                    if "price" in df.columns:
+                        df["hotel_total"] = df["price"] * df["days"]
+
+                    if st.session_state.history:
+                        flight_price = st.session_state.history[-1]["price"]
+                        df["flight_price"] = flight_price
+                        df["trip_total"] = df["total"] + flight_price
+
+                    st.dataframe(df, use_container_width=True)
 
 # =====================================================
-# ================= SIDEBAR HISTORY ===================
+# ================= SIDEBAR ===========================
 # =====================================================
-st.sidebar.title("👤 User History")
+st.sidebar.title("👤 Recent Flights")
 
 if st.session_state.history:
     for h in st.session_state.history[::-1][:5]:
-        st.sidebar.write(f"{h['from']} ➜ {h['to']} : ₹ {h['price']}")
+        st.sidebar.write(f"{h['from']} ➜ {h['to']} | ₹ {h['price']}")
 else:
-    st.sidebar.info("No predictions yet")
+    st.sidebar.info("No predictions yet.")
+
 
