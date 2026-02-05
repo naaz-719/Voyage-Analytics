@@ -141,7 +141,14 @@ with tab2:
         res = requests.post(f"{BACKEND_URL}/recommend-hotels", json=payload)
 
         if res.status_code == 200:
-            hotels = res.json()["recommended_hotels"]
+            response_json = res.json()
+
+        if "recommended_hotels" in response_json:
+            hotels = response_json["recommended_hotels"]
+        else:
+            st.error(response_json.get("error", "Unknown error from hotel API"))
+            hotels = []
+
             df = pd.DataFrame(hotels)
 
             st.success("🏨 Recommended Hotels")
