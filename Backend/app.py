@@ -59,15 +59,15 @@ def recommend_hotels():
     try:
         data = request.get_json()
 
-        city = data.get("place")
+        place = data.get("place")
         max_price = data.get("max_price", 5000)
         min_rating = data.get("min_rating", 3)
 
-        if not city:
-            return jsonify({"error": "city is required"}), 400
+        if not place:
+            return jsonify({"error": "place is required"}), 400
 
         results = hotels_df[
-            (hotels_df["city"] == city) &
+            (hotels_df["place"] == place) &
             (hotels_df["price_per_night"] <= max_price) &
             (hotels_df["rating"] >= min_rating)
         ].sort_values(
@@ -82,10 +82,14 @@ def recommend_hotels():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+  
+
+
 
 # ================= RUN APP =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
