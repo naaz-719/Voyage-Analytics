@@ -15,10 +15,12 @@ st.set_page_config(
 BACKEND_URL = "https://voyage-analytics-r34b.onrender.com"
 
 # ================= HEADER =================
-st.markdown("""
+st.markdown(
+    """
 # ✈️ Voyage Analytics
 ### Smart Flight Pricing + Hotel Planning System
-""")
+"""
+)
 
 st.divider()
 
