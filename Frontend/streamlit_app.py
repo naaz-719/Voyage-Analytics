@@ -8,7 +8,7 @@ from datetime import datetime
 
 # ================= CONFIG =================
 st.set_page_config(
-    page_title="Voyage Analytics Pro",
+    page_title="Voyage Analytics",
     page_icon="✈️",
     layout="wide"
 )
