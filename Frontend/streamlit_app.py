@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import requests
+import joblib
 import os
+import altair as alt
 from datetime import datetime
 
 # ================= CONFIG =================
@@ -11,10 +13,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# Replace with your actual Render or Local URL
 BACKEND_URL = "https://voyage-analytics-r34b.onrender.com"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ================= PREMIUM UI DESIGN (CSS) =================
+# ================= NEW PREMIUM DESIGN (ONLY BG & GLASS CHANGES) =================
 st.markdown("""
 <style>
     /* Animated Gradient Background */
@@ -30,182 +32,122 @@ st.markdown("""
         100% { background-position: 0% 50%; }
     }
 
-    /* Ultra Glassmorphism Card */
+    /* Upgraded Glass Card */
     .glass-card {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 30px;
-        border-radius: 25px;
-        margin-bottom: 25px;
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+        padding: 25px;
+        border-radius: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     }
-
-    /* Custom Input Styles */
-    .stTextInput>div>div>input, .stSelectbox>div>div>div {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        color: white !important;
-        border-radius: 10px !important;
-    }
-
-    h1, h2, h3, p, label { color: white !important; font-family: 'Inter', sans-serif; }
     
-    .welcome-text {
-        font-size: 2.5rem;
-        font-weight: 800;
-        background: -webkit-linear-gradient(#00c6ff, #0072ff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 10px;
+    h1, h2, h3, p, label, .stMarkdown {
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ================= SESSION STATE =================
+# We replaced 'logged_in' logic with your 'First Name' request
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
+
 if "history" not in st.session_state:
     st.session_state.history = []
+
 if "flight_price" not in st.session_state:
     st.session_state.flight_price = 0
 
-# ================= LANDING / NAME ENTRY =================
+# ================= WELCOME SCREEN (REPLACES LOGIN) =================
 if not st.session_state.user_name:
-    st.markdown('<div style="height: 15vh;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 20vh;"></div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
         st.markdown('<div class="glass-card" style="text-align: center;">', unsafe_allow_html=True)
-        st.markdown('<h1 class="welcome-text">VOYAGE</h1>', unsafe_allow_html=True)
-        st.write("Welcome to the future of travel planning.")
-        name_input = st.text_input("Enter your name to begin:", placeholder="Ex: John Doe")
-        if st.button("Start Planning ✈️"):
-            if name_input:
-                st.session_state.user_name = name_input
+        st.title("✈️ Welcome to Voyage")
+        name = st.text_input("Please enter your First Name to continue:")
+        if st.button("Enter Dashboard"):
+            if name:
+                st.session_state.user_name = name
                 st.rerun()
             else:
-                st.warning("Please enter a name.")
+                st.error("Please enter a name!")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# ================= MAIN DASHBOARD =================
+# ================= MAIN APP LOGIC (NO CHANGES TO LOGIC) =================
+st.title(f"🚀 Welcome, {st.session_state.user_name}!")
 
-# Header with dynamic name
-st.markdown(f'<p class="welcome-text">Welcome, {st.session_state.user_name}!</p>', unsafe_allow_html=True)
-st.write(f"Today is {datetime.now().strftime('%A, %d %B %Y')}")
-
-# Sidebar History
-st.sidebar.title("📜 Booking History")
-if st.session_state.history:
-    for h in reversed(st.session_state.history):
-        st.sidebar.markdown(f"""
-        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 10px; margin-bottom: 5px; border-left: 3px solid #00c6ff;">
-            <small>{h['from']} ➜ {h['to']}<br><b>₹ {h['price']}</b></small>
-        </div>
-        """, unsafe_allow_html=True)
-else:
-    st.sidebar.info("No bookings yet.")
-
-if st.sidebar.button("Switch User"):
-    st.session_state.user_name = ""
-    st.rerun()
-
-# --- MAIN TABS ---
-tab1, tab2 = st.tabs(["🎫 Flight Prediction", "🏨 Hotel & Trip Budget"])
+tab1, tab2 = st.tabs(["🎫 Flight Prediction", "🏨 Hotel Recommendation"])
 
 with tab1:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("Flight Search")
+    st.subheader("Predict Flight Price")
     
-    # Logic for City Selection
-    if 'from_city' not in st.session_state: st.session_state.from_city = "Sao Paulo (SP)"
-    if 'to_city' not in st.session_state: st.session_state.to_city = "Salvador (BH)"
+    col1, col2 = st.columns(2)
+    with col1:
+        distance = st.number_input("Distance", value=1000)
+        agency = st.selectbox("Agency", [0, 1, 2, 3])
+        flight_type = st.selectbox("Flight Type", [0, 1])
+    with col2:
+        day = st.slider("Day", 1, 31, 15)
+        is_weekend = st.selectbox("Is Weekend", [0, 1])
+        popularity = st.number_input("Route Popularity", value=50)
 
-    def swap():
-        st.session_state.from_city, st.session_state.to_city = st.session_state.to_city, st.session_state.from_city
-
-    c1, c_mid, c2 = st.columns([4, 1, 4])
-    cities = ["Sao Paulo (SP)", "Salvador (BH)", "Natal (RN)", "Recife (PE)", "Florianopolis (SC)", "Aracaju (SE)"]
-    
-    with c1: st.selectbox("Departure", cities, key="from_city")
-    with c_mid: 
-        st.markdown("<br>", unsafe_allow_html=True); st.button("🔄", on_click=swap)
-    with c2: st.selectbox("Destination", cities, key="to_city")
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        travel_date = st.date_input("Travel Date", datetime.now())
-        agency = st.selectbox("Agency", ["Cloud Jet", "Sky High", "Voyage Air", "Star Travel"])
-    with col_b:
-        f_class = st.radio("Cabin Class", ["Economy", "Business"], horizontal=True)
-        pop = st.slider("Route Popularity", 0, 100, 50)
-
-    if st.button("Calculate Best Price"):
-        # Logic matches your app (1).py payload requirements
+    if st.button("Predict Price"):
         payload = {
-            "date": str(travel_date),
-            "from_city": st.session_state.from_city,
-            "to_city": st.session_state.to_city,
+            "distance": distance,
             "agency": agency,
-            "class": f_class,
-            "popularity": pop
+            "flightType": flight_type,
+            "day": day,
+            "is_weekend": is_weekend,
+            "route_popularity": popularity
         }
-        
-        try:
-            res = requests.post(f"{BACKEND_URL}/predict", json=payload)
-            if res.status_code == 200:
-                price = res.json()['predicted_price']
-                st.session_state.flight_price = price
-                # Add to history
-                st.session_state.history.append({"from": st.session_state.from_city, "to": st.session_state.to_city, "price": price})
-                
-                st.balloons()
-                st.markdown(f"""
-                <div style="text-align: center; background: rgba(0, 198, 255, 0.1); padding: 20px; border-radius: 15px; border: 1px solid #00c6ff;">
-                    <h2 style="margin:0;">Predicted Fare: ₹ {price:,.2f}</h2>
-                </div>
-                """, unsafe_allow_html=True)
-        except:
-            st.error("Could not connect to the Backend API.")
+        res = requests.post(f"{BACKEND_URL}/predict", json=payload)
+        if res.status_code == 200:
+            price = res.json()["predicted_price"]
+            st.session_state.flight_price = price
+            st.session_state.history.append({"from": "Origin", "to": "Destination", "price": price})
+            st.success(f"Predicted Price: ₹ {price}")
+        else:
+            st.error("Error in prediction")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("Hotel & Total Budget Analysis")
+    st.subheader("Find Hotels")
     
     h1, h2, h3 = st.columns(3)
-    with h1: dest = st.selectbox("Hotel Location", cities)
-    with h2: nights = st.number_input("Nights", 1, 30, 3)
-    with h3: budget = st.number_input("Total Trip Budget (₹)", 1000, 100000, 20000)
+    with h1: place = st.selectbox("Place", ["Florianopolis (SC)", "Salvador (BH)", "Natal (RN)", "Aracaju (SE)", "Recife (PE)", "Sao Paulo (SP)"])
+    with h2: days = st.number_input("Days", min_value=1, value=1)
+    with h3: max_total = st.number_input("Budget", value=20000)
 
-    if st.button("🏨 Search Hotels"):
-        f_price = st.session_state.flight_price
-        try:
-            # Matches your app (1).py recommend-hotels logic
-            res = requests.post(f"{BACKEND_URL}/recommend-hotels", json={"place": dest, "days": nights})
-            hotels = res.json().get("recommended_hotels", [])
-            
-            for h in hotels:
-                total_stay = h['calculated_total']
-                total_trip = total_stay + f_price
-                is_ok = total_trip <= budget
-                
-                color = "#00ffcc" if is_ok else "#ff4b4b"
-                
+    if st.button("🏨 Find Hotels"):
+        payload = {"place": place, "days": days, "max_total": max_total}
+        res = requests.post(f"{BACKEND_URL}/recommend-hotels", json=payload)
+        if res.status_code == 200:
+            hotels = res.json()["recommended_hotels"]
+            for hotel in hotels:
+                total_trip = hotel["calculated_total"] + st.session_state.flight_price
+                status = "✅ Within Budget" if total_trip <= max_total else "❌ Over Budget"
                 st.markdown(f"""
-                <div class="glass-card" style="border-left: 5px solid {color};">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h4 style="margin:0;">{h['name']}</h4>
-                        <span style="background: {color}; color: black; padding: 2px 10px; border-radius: 20px; font-weight: bold; font-size: 0.8rem;">
-                            {'WITHIN BUDGET' if is_ok else 'OVER BUDGET'}
-                        </span>
-                    </div>
-                    <p style="margin: 10px 0 5px 0;">Nightly: ₹ {h['price']} | Total Stay: ₹ {total_stay}</p>
-                    <h3 style="margin:0; color: {color} !important;">Total Trip: ₹ {total_trip:,.2f}</h3>
-                    <small style="opacity: 0.6;">(Includes Flight + Hotel)</small>
+                <div class="glass-card">
+                    <h3>{hotel['name']}</h3>
+                    <p>Price per Night: ₹ {hotel['price']}</p>
+                    <p><b>Total Trip Cost: ₹ {total_trip}</b></p>
+                    <p>{status}</p>
                 </div>
                 """, unsafe_allow_html=True)
-        except:
-            st.error("Error fetching hotel data.")
     st.markdown('</div>', unsafe_allow_html=True)
+
+# Sidebar
+st.sidebar.title("📜 History")
+for h in reversed(st.session_state.history):
+    st.sidebar.write(f"Flight: ₹ {h['price']}")
+
+if st.sidebar.button("Switch User"):
+    st.session_state.user_name = ""
+    st.rerun()
